@@ -26,10 +26,9 @@ exports.connect = () => {
     mongoose
         .connect(mongoUrl)
         .then(() => {
-
             if (cluster.isMaster) {
-                console.log(`=============== 🚀🚀🚀 Successfully connected to ${nodeEnv} mongo database 🚀🚀🚀 ===============`);
-                console.log(`=============== 🚀🚀🚀 Database name: ${dbName} 🚀🚀🚀 =============== \n`);
+                console.log(`===============>     Successfully connected to ${nodeEnv} mongo database`);
+                console.log(`===============>     Database name: ${dbName}\n`);
             }
         })
         .catch((error) => {
