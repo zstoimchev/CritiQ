@@ -1,4 +1,4 @@
-const QuestionSetModel = require("../models/question");
+const QuestionSetModel = require('../models/question');
 
 const create = (postData) => QuestionSetModel.create(postData);
 
@@ -8,7 +8,8 @@ const getOne = (filter) => QuestionSetModel.findOne(filter).lean();
 
 const getById = (id) => QuestionSetModel.findById(id).lean();
 
-const updateById = (id, payload) => QuestionSetModel.findByIdAndUpdate(id, payload, { new: true }).lean();
+const updateById = (id, payload) =>
+    QuestionSetModel.findByIdAndUpdate(id, payload, { new: true }).lean();
 
 const QuestionService = {
     create,
@@ -16,7 +17,6 @@ const QuestionService = {
     getOne,
     getById,
     updateById,
-}
+};
 
-
-module.exports = QuestionService
+module.exports = QuestionService;
