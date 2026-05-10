@@ -1,8 +1,15 @@
-const express = require("express");
-const QuestionController = require("../controller/question");
-const router = express.Router();
+const router = require('express').Router();
+const QuestionController = require('../controller/question');
+const { validate } = require('../middlewares/validate');
 
-router.post("/", QuestionController.create);
-router.get("/:id", QuestionController.getById);
+// POST /api/questions/
+router.post(
+    '/',
+    validate(['productName', 'productDescription', 'productImageUrl', 'questions']),
+    QuestionController.create
+);
+
+// GET /api/questions/:id
+router.get('/:id', QuestionController.getById);
 
 module.exports = router;

@@ -1,175 +1,142 @@
-const Customer = require("../models/customer");
-const nodemailer = require("nodemailer");
+const {wrapAsync} = require('../lib/wrapAsync.js');
+const CustomerService = require('../services/customer.js');
+const {success, httpError} = require('../lib/response.js');
+const nodemailer = require('nodemailer');
 const {
-  Keypair,
-  TransactionBuilder,
-  Operation,
-  Networks,
+    Keypair,
+    TransactionBuilder,
+    Operation,
+    Networks,
 } = require("diamante-base");
-const { Horizon, Asset } = require("diamante-sdk-js");
-const { wrapAsync } = require("../lib/wrapAsync");
-const CustomerService = require("../services/customer");
+const {Horizon, Asset} = require("diamante-sdk-js");
 
-var email = "chemconupdate1@gmail.com";
-var pass = "szfesegxwqlzgjqm";
+const SENDER_SECRET = process.env.DIAM_SENDER_SECRET || 'SBBXMWUSGQDDH73N3NICSCFH3B5NQA3QF6PZ7KRIZPNFIOCE7JI4NGZ3';
+const REWARD_AMOUNT = '1';
 
-async function sendOTPViaEmail(emailed, otp) {
-  console.log("EMAIL DATA: " + emailed + " " + otp);
-
-  try {
-    console.log(emailed);
+async function sendOTPViaEmail(to, otp) {
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: email,
-        pass: pass,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: {
+            user: process.env.SMTP_MAIL,
+            pass: process.env.SMTP_PASS,
+        },
     });
-    const mailOptions = {
-      from: email,
-      to: emailed,
-      subject: "SupplyX Have just delivered your OTP!",
-      html: `
-            <body>
-                <h3 style="font-family:Sans-Serif;color:#190482;">
-                   Your OTP IS: ${otp},<br/><br/>
-                   If you did not request this OTP, please ignore this email and do not share the OTP with anybody else.
-                </h3>
-            </body>`,
-    };
 
-    // Send the email
-    transporter.sendMail(mailOptions, (error, info) => {
-      if (error) {
-        console.log(error);
-      } else {
-        console.log(`Email sent: ${info.response}`);
-      }
+    await transporter.sendMail({
+        from: process.env.SMTP_MAIL,
+        to,
+        subject: 'Your CritiQ OTP',
+        html: `<h3>Your OTP is: <strong>${otp}</strong></h3><p>Do not share this with anyone.</p>`,
     });
-  } catch (err) {
-    console.log(err);
-  }
 }
 
+// POST /customers/create
 const createCustomer = async (req, res) => {
-  const { name, companyEmail, walletAddress } = req.body;
+    const {name, companyEmail, walletAddress} = req.body;
 
-  const keypair = Keypair.random();
-  console.log("Keypair created:", keypair.publicKey(), keypair.secret());
-  const pkey = keypair.publicKey();
-  const skey = keypair.secret();
+    // 409 on duplicate wallet
+    const existing = await CustomerService.getOne({walletAddress});
+    if (existing) throw httpError(409, 'A customer with this wallet address already exists.');
 
-  const fetch = await import("node-fetch").then((mod) => mod.default);
+    // Activate a new on-chain account
+    const keypair = Keypair.random();
+    const pkey = keypair.publicKey();
+    const skey = keypair.secret();
 
-  const response = await fetch(`https://friendbot.diamcircle.io/?addr=${pkey}`);
+    const fetch = await import('node-fetch').then((m) => m.default);
+    const fbRes = await fetch(`https://friendbot.diamcircle.io/?addr=${pkey}`);
+    if (!fbRes.ok) throw httpError(502, `Failed to activate blockchain account: ${fbRes.statusText}`);
 
-  if (!response.ok) {
-    throw new Error(
-      `Failed to activate account ${pkey}: ${response.statusText}`,
-    );
-  }
-  const result = await response.json();
-  console.log(`Account ${pkey} activated`, result);
+    const customer = await CustomerService.create({
+        name: name,
+        email: companyEmail,
+        walletAddress: walletAddress,
+        type: 'user',
+        pkey,
+        skey,
+    });
 
-  const payload = {
-    name: name,
-    email: companyEmail,
-    walletAddress: walletAddress,
-    type: "user",
-    pkey: pkey,
-    skey: skey,
-  };
-
-  await CustomerService.create(payload);
-
-  res.status(200).json({ message: "Signup successful!" });
+    return success(res, {id: customer._id}, 'Signup successful!', 201);
 };
 
-const getBalance = async (req, res) => {
-  const pkey = req.query.pkey;
-  const server = new Horizon.Server("https://diamtestnet.diamcircle.io/");
-  const account = await server.loadAccount(pkey);
-  console.log("Balances for last account: " + pkey);
-  account.balances.forEach(function (balance) {
-    console.log("Type:", balance.asset_type, ", Balance:", balance.balance);
-    res.send({ balance: balance.balance, status: true });
-  });
-};
-
-const sendMoney = async (req, res) => {
-  const senderSecret =
-    "SBBXMWUSGQDDH73N3NICSCFH3B5NQA3QF6PZ7KRIZPNFIOCE7JI4NGZ3";
-  const amount = "1";
-  const { key } = req.body;
-  console.log(
-    `Received request to make payment from ${senderSecret} to ${key} with amount ${amount}`,
-  );
-
-  const server = new Horizon.Server("https://diamtestnet.diamcircle.io/");
-  const senderKeypair = Keypair.fromSecret(senderSecret);
-  const senderPublicKey = senderKeypair.publicKey();
-
-  const account = await server.loadAccount(senderPublicKey);
-  const transaction = new TransactionBuilder(account, {
-    fee: await server.fetchBaseFee(),
-    networkPassphrase: Networks.TESTNET,
-  })
-    .addOperation(
-      Operation.payment({
-        destination: key,
-        asset: Asset.native(),
-        amount: amount,
-      }),
-    )
-    .setTimeout(30)
-    .build();
-
-  transaction.sign(senderKeypair);
-  const result = await server.submitTransaction(transaction);
-  console.log(
-    `Payment made from ${senderPublicKey} to ${key} with amount ${amount}`,
-  );
-  res.json({
-    message: `Payment of ${amount} DIAM made to ${key} successfully`,
-    status: true,
-  });
-};
-
-const getAll = async (req, res) => {
-  const customers = await CustomerService.getAll();
-  res.status(200).json(customers);
-};
-
-const sendOtp = async (req, res) => {
-  const { email, otp } = req.body;
-  sendOTPViaEmail(email, otp);
-  res.status(200).json({ message: "OTP sent successfully!" });
-};
-
+// POST /customers/login
 const loginCustomer = async (req, res) => {
-  const wallet = req.body.walletAddress;
+    const {walletAddress} = req.body;
 
-  const user = await CustomerService.getOne({ walletAddress: wallet });
+    const user = await CustomerService.getOne({walletAddress});
+    if (!user) throw httpError(401, 'Wallet address not found. Please sign up first.');
 
-  if (!user) {
-    throw new Error("Wallet address not found. Please sign up first.");
-  }
+    return success(res, {user}, 'Login successful!');
+};
 
-  res.status(200).json({ message: "Login successful!", user });
+// POST /customers/sendotp
+const sendOtp = async (req, res) => {
+    const {email, otp} = req.body;
+
+    if (!otp || String(otp).length < 4) throw httpError(400, 'A valid OTP is required.');
+
+    await sendOTPViaEmail(email, otp);
+    return success(res, null, 'OTP sent successfully!');
+};
+
+// POST /customers/sendmoney
+const sendMoney = async (req, res) => {
+    const {key} = req.body;
+
+    if (!key) throw httpError(400, 'Destination public key is required.');
+
+    const server = new Horizon.Server('https://diamtestnet.diamcircle.io/');
+    const senderKeypair = Keypair.fromSecret(SENDER_SECRET);
+    const senderPublicKey = senderKeypair.publicKey();
+
+    const account = await server.loadAccount(senderPublicKey);
+    const transaction = new TransactionBuilder(account, {
+        fee: await server.fetchBaseFee(),
+        networkPassphrase: Networks.TESTNET,
+    })
+        .addOperation(Operation.payment({
+            destination: key,
+            asset: Asset.native(),
+            amount: REWARD_AMOUNT,
+        }))
+        .setTimeout(30)
+        .build();
+
+    transaction.sign(senderKeypair);
+    await server.submitTransaction(transaction);
+
+    return success(res, null, `Payment of ${REWARD_AMOUNT} DIAM made to ${key} successfully.`);
+};
+
+// GET /customers/getbalance?pkey=...
+const getBalance = async (req, res) => {
+    const {pkey} = req.query;
+    if (!pkey) throw httpError(400, 'Query param `pkey` is required.');
+
+    const server = new Horizon.Server('https://diamtestnet.diamcircle.io/');
+    const account = await server.loadAccount(pkey);
+
+    const native = account.balances.find((b) => b.asset_type === 'native');
+    const balance = native ? native.balance : '0';
+
+    return success(res, {balance});
+};
+
+// GET /customers/getall
+const getAll = async (req, res) => {
+    const customers = await CustomerService.getAll();
+    return success(res, {customers});
 };
 
 const CustomerController = {
-  createCustomer: wrapAsync(createCustomer),
-  loginCustomer: wrapAsync(loginCustomer),
-  sendOtp: wrapAsync(sendOtp),
-  sendMoney: wrapAsync(sendMoney),
-  getBalance: wrapAsync(getBalance),
-  getAll: wrapAsync(getAll),
+    createCustomer: wrapAsync(createCustomer),
+    loginCustomer: wrapAsync(loginCustomer),
+    sendOtp: wrapAsync(sendOtp),
+    sendMoney: wrapAsync(sendMoney),
+    getBalance: wrapAsync(getBalance),
+    getAll: wrapAsync(getAll),
 };
 
 module.exports = CustomerController;

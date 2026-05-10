@@ -20,12 +20,8 @@ if (!isProd) {
     const addr = server.address();
     const host = addr?.address === "::" ? "localhost" : addr?.address;
 
-    console.log(
-      `\n=============== 🚀🚀🚀 Server running on port ${port} 🚀🚀🚀 ===============`,
-    );
-    console.log(
-      `=============== 🚀🚀🚀 Current time: ${new Date().toString()} 🚀🚀🚀 ===============`,
-    );
+    console.log(`\n===============>     Server running on port ${port}`);
+    console.log(`===============>     Current time: ${new Date().toString()}`);
   });
 
   server.on("error", (err) => {

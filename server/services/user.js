@@ -1,4 +1,4 @@
-const UserModel = require("../models/user");
+const UserModel = require('../models/user');
 
 const create = (postData) => UserModel.create(postData);
 
@@ -8,7 +8,8 @@ const getOne = (filter) => UserModel.findOne(filter).lean();
 
 const getById = (id) => UserModel.findById(id).lean();
 
-const updateById = (id, payload) => UserModel.findByIdAndUpdate(id, payload, { new: true }).lean();
+const updateById = (id, payload) =>
+    UserModel.findByIdAndUpdate(id, payload, { new: true }).lean();
 
 const UserService = {
     create,
@@ -16,7 +17,6 @@ const UserService = {
     getOne,
     getById,
     updateById,
-}
+};
 
-
-module.exports = UserService
+module.exports = UserService;

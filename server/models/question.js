@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const CONSTANTS = require('../lib/contants');
+const CONSTANTS = require('../lib/constants');
 const Schema = mongoose.Schema;
 
 // Define the schema for a question
